@@ -201,70 +201,7 @@ skillの役割:
 
 ## 実装ステップ
 
-### Step 1: DuckDB導入
-
-- DuckDB CLIまたはPythonパッケージをインストールする。
-- PythonからDuckDBを操作できるようにする。
-- `jaea/jaea.duckdb` を作成する。
-
-### Step 2: データ取り込みスクリプト
-
-作成候補:
-
-- `jaea/scripts/build_duckdb.py`
-
-役割:
-
-- `jaea/output` のCSV/JSONLをDuckDBに取り込む。
-- テーブルを作成または再作成する。
-- `rag_documents` を生成する。
-- 件数チェックを行う。
-
-### Step 3: 検索スクリプト
-
-作成候補:
-
-- `jaea/scripts/search_rag.py`
-
-役割:
-
-- ユーザクエリを受け取る。
-- DuckDBから関連資料を検索する。
-- 結果をMarkdownまたはJSONで返す。
-
-### Step 4: skill作成
-
-作成候補:
-
-- `$CODEX_HOME/skills/jaea-rag/SKILL.md`
-
-skillに含める内容:
-
-- DuckDBの場所
-- 検索スクリプトの実行方法
-- 結果の読み方
-- ユーザへの返答フォーマット
-- 検索語展開の方針
-
-### Step 5: 検証
-
-最低限確認するクエリ:
-
-- `3Dモデル生成`
-- `三次元図面`
-- `カメラ画像`
-- `セマンティックサーベイマップ`
-- `線量マッピング`
-- `遠隔ロボット`
-- `AR`
-- `空間マッピング`
-
-確認項目:
-
-- 特許と報告書が両方検索できること
-- 高信頼候補が上位に出ること
-- 詳細URL/PDFリンクが出ること
-- 関連理由が説明できること
+詳細な実装手順と進捗管理は @docs/implementation.md を参照する。
 
 ## 注意点
 
