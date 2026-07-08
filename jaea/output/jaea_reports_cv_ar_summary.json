@@ -1,0 +1,10 @@
+{
+  "total_results_reported": 23280,
+  "search_pages_reported": 233,
+  "detail_urls_collected": 23280,
+  "detail_pages_scraped": 23280,
+  "detail_pages_skipped_by_resume": 0,
+  "cv_ar_candidates": 418,
+  "candidate_threshold": 6,
+  "failures": 0
+}
