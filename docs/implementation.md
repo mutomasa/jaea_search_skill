@@ -6,8 +6,10 @@
 
 ## Step 1: DuckDB導入
 
-- [ ] DuckDB CLIまたはPythonパッケージをインストールする。
-- [ ] PythonからDuckDBを操作できるようにする。
+- [ ] `uv` 管理のPythonプロジェクトとして初期化する。
+- [ ] `uv add duckdb` でDuckDB Pythonパッケージをインストールする。
+- [ ] 必要な追加ライブラリはすべて `uv add ...` で導入する。
+- [ ] スクリプトは原則 `uv run ...` で実行する。
 - [ ] `jaea/jaea.duckdb` を作成する。
 
 ## Step 2: データ取り込みスクリプト
