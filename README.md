@@ -4,6 +4,10 @@ JAEAの特許データと報告書データをDuckDBに取り込み、Codexま�
 
 現状は、DuckDB上の統合文書テーブル `rag_documents` をchunk化し、各chunkにローカルembeddingを付与して、上位chunkを根拠として提示するRAG構成です。embeddingは外部APIやモデルダウンロードに依存しない `local-hashed-ngram-v1` で、日本語・英語混在テキストを扱えるよう文字n-gramと英数字tokenをベクトル化します。
 
+## デモ
+
+<video src="assets/demo.mp4" controls width="720"></video>
+
 ## できること
 
 - JAEA特許データと報告書データを横断検索する。
