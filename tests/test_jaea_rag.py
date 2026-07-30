@@ -11,6 +11,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from jaea.scripts.build_duckdb import build_database  # noqa: E402
 from jaea.scripts.search_rag import ensure_database, parse_invocation, search_database, term_matches  # noqa: E402
+from jaea.scripts.setup_jaea_search import database_is_ready, setup_database, validate_source_files  # noqa: E402
 
 
 def write_csv(path: Path, rows: list[dict[str, str]], fieldnames: list[str]) -> None:
@@ -190,3 +191,32 @@ def test_build_database_and_search(tmp_path: Path) -> None:
 
     ar_results = search_database(db_path, "AR", limit=5)
     assert [result.doc_id for result in ar_results] == ["P53320"]
+
+
+def test_setup_database_runs_full_first_use_pipeline(tmp_path: Path) -> None:
+    output_dir = make_output_dir(tmp_path)
+    db_path = tmp_path / "jaea.duckdb"
+
+    summary = setup_database(db_path, output_dir, smoke_query="3Dモデル生成", smoke_limit=2)
+
+    assert summary["built"] is True
+    assert summary["counts"]["rag_documents"] == 2
+    assert summary["counts"]["rag_chunks"] > 2
+    assert summary["smoke_result_count"] == 2
+    assert database_is_ready(db_path)
+
+    second_summary = setup_database(db_path, output_dir, smoke_query="3Dモデル生成", smoke_limit=2)
+    assert second_summary["built"] is False
+
+
+def test_validate_source_files_reports_missing_inputs(tmp_path: Path) -> None:
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    try:
+        validate_source_files(output_dir)
+    except FileNotFoundError as exc:
+        assert "JAEA入力データが不足しています" in str(exc)
+        assert "jaea_patents_all.csv" in str(exc)
+    else:
+        raise AssertionError("validate_source_files should fail when required inputs are missing")

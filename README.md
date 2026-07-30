@@ -121,11 +121,20 @@ jaea-search "ドローン"
 uv sync
 ```
 
-DuckDBを初めて構築する場合は、次を実行します。
+初回セットアップは次の1コマンドで完了します。
 
 ```bash
-uv run python jaea/scripts/build_duckdb.py
+uv run python jaea/scripts/setup_jaea_search.py
 ```
+
+このスクリプトは次をまとめて実行します。
+
+- `jaea/output` の入力データ確認
+- DuckDBへのデータ登録
+- `rag_documents` の作成
+- `rag_chunks` へのchunk化
+- ローカルembeddingの作成
+- 検索スモークテスト
 
 生成されるDB:
 
@@ -134,6 +143,12 @@ jaea/jaea.duckdb
 ```
 
 `jaea/jaea.duckdb` は元データから再生成できるため、git管理対象外です。
+
+データを更新した後にDBを作り直す場合は、次を実行します。
+
+```bash
+uv run python jaea/scripts/setup_jaea_search.py --force
+```
 
 ## 検索CLI
 

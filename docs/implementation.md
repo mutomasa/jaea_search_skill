@@ -6,6 +6,7 @@
 - [x] `9830056` Codex向け `AGENTS.md` と `uv` 依存管理方針を追加
 - [x] Codex/Claude Code起動時に `jaea-search "検索キーワード"` をJAEA検索として扱う導線を追加する。
 - [x] DuckDB構築、検索CLI、pytest単体テストを実装する。
+- [x] 初回セットアップ用に、データ登録、chunk化、embedding作成、検索確認までを1コマンドで実行するパイプラインを追加する。
 
 ## Step 1: DuckDB導入
 
@@ -20,6 +21,7 @@
 作成候補:
 
 - `jaea/scripts/build_duckdb.py`
+- `jaea/scripts/setup_jaea_search.py`
 
 実装項目:
 
@@ -27,6 +29,7 @@
 - [x] テーブルを作成または再作成する。
 - [x] `rag_documents` を生成する。
 - [x] 件数チェックを行う。
+- [x] 初回ユーザ向けに入力データ確認、DuckDB登録、chunk embedding作成、検索スモークテストまでを一括実行する。
 
 ## Step 3: 検索スクリプト
 

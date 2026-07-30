@@ -34,19 +34,27 @@ Fallback files when DuckDB or the search script is unavailable:
 
 ## Search Procedure
 
-1. If `jaea/scripts/search_rag.py` exists, run:
+1. On first use, or when `jaea/jaea.duckdb` is missing or stale, run the setup pipeline:
+
+   ```bash
+   uv run python jaea/scripts/setup_jaea_search.py
+   ```
+
+   This registers `jaea/output` data into DuckDB, creates `rag_documents`, chunks documents into `rag_chunks`, creates local embeddings, and runs a smoke search.
+
+2. If `jaea/scripts/search_rag.py` exists, run:
 
    ```bash
    uv run python jaea/scripts/search_rag.py "検索キーワード"
    ```
 
-2. If `jaea/jaea.duckdb` does not exist, the search script builds it automatically from `jaea/output`.
-3. The search script uses `rag_chunks` embeddings, keyword matches, and source scores to rank results.
-4. Use the returned evidence chunks as the grounding context for the answer.
-5. If the DuckDB search path is unavailable, search the fallback Markdown/CSV/JSONL files with `rg`.
-6. Prefer high-confidence report candidates before broad candidates.
-7. Always include patents and reports separately when both are relevant.
-8. Treat results as related technical references, not legal patent clearance.
+3. If `jaea/jaea.duckdb` does not exist, the search script also builds it automatically from `jaea/output`.
+4. The search script uses `rag_chunks` embeddings, keyword matches, and source scores to rank results.
+5. Use the returned evidence chunks as the grounding context for the answer.
+6. If the DuckDB search path is unavailable, search the fallback Markdown/CSV/JSONL files with `rg`.
+7. Prefer high-confidence report candidates before broad candidates.
+8. Always include patents and reports separately when both are relevant.
+9. Treat results as related technical references, not legal patent clearance.
 
 ## Response Format
 
