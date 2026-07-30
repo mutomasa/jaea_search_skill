@@ -6,7 +6,9 @@ JAEAの特許データと報告書データをDuckDBに取り込み、Codexま�
 
 ## デモ
 
-<video src="assets/demo.mp4" controls width="720"></video>
+![デモ](assets/demo.gif)
+
+[MP4で見る](assets/demo.mp4)
 
 ## できること
 
