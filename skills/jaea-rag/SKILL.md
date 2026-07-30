@@ -40,10 +40,11 @@ Fallback files when DuckDB or the search script is unavailable:
    uv run python jaea/scripts/search_rag.py "検索キーワード"
    ```
 
-2. If the DuckDB search path is not implemented yet, search the fallback Markdown/CSV/JSONL files with `rg`.
-3. Prefer high-confidence report candidates before broad candidates.
-4. Always include patents and reports separately when both are relevant.
-5. Treat results as related technical references, not legal patent clearance.
+2. If `jaea/jaea.duckdb` does not exist, the search script builds it automatically from `jaea/output`.
+3. If the DuckDB search path is unavailable, search the fallback Markdown/CSV/JSONL files with `rg`.
+4. Prefer high-confidence report candidates before broad candidates.
+5. Always include patents and reports separately when both are relevant.
+6. Treat results as related technical references, not legal patent clearance.
 
 ## Response Format
 

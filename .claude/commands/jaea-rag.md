@@ -16,6 +16,8 @@ If `jaea/scripts/search_rag.py` exists, run:
 uv run python jaea/scripts/search_rag.py "$ARGUMENTS"
 ```
 
+If `jaea/jaea.duckdb` does not exist, the search script builds it automatically from `jaea/output`.
+
 If the search script or DuckDB is unavailable, search these fallback files:
 
 - `jaea/output/jaea_patents_ai_curated.md`

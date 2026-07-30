@@ -1,0 +1,8 @@
+[project]
+name = "eques"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "duckdb>=1.5.5",
+    "pytest>=9.1.1",
+]
