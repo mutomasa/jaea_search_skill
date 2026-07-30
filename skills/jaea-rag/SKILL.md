@@ -7,7 +7,7 @@ JAEA特許・報告書データから、ユーザの研究アイディアや検�
 Use this skill when the user invokes:
 
 - `jaea-rag "検索キーワード"`
-- `/jaea-rag 検索キーワード`
+- `/jaea-rag 検索キーワード` as a Claude Code shortcut
 
 Also use this skill when the user asks to find related JAEA patents, reports, 3D modeling, computer vision, AR mapping, image processing, spatial mapping, dose mapping, or remote robotics references.
 
@@ -15,6 +15,8 @@ Also use this skill when the user asks to find related JAEA patents, reports, 3D
 
 - Skill name: `jaea-rag`
 - Search keyword: free text, usually quoted, for example `jaea-rag "3Dモデル生成"`
+- Standard invocation: `jaea-rag "検索キーワード"`
+- Claude Code shortcut: `/jaea-rag 検索キーワード`
 
 ## Data Sources
 

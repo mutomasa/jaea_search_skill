@@ -184,7 +184,7 @@ skill名の候補:
 
 ## 起動時の利用方法
 
-Claude Codeでこのリポジトリを開いた場合は、本ファイルをプロジェクト指示として読み込む。ユーザが `jaea-rag "検索キーワード"` または `/jaea-rag 検索キーワード` と入力した場合は、JAEA特許・報告書RAG検索として扱う。
+Claude Codeでこのリポジトリを開いた場合は、本ファイルをプロジェクト指示として読み込む。標準の呼び方は `jaea-rag "検索キーワード"` とする。`/jaea-rag 検索キーワード` はClaude Code向けの補助的なショートカットとして扱う。
 
 Claude Code用のプロジェクトコマンドは @.claude/commands/jaea-rag.md に置く。共通のskill仕様は @skills/jaea-rag/SKILL.md を参照する。
 

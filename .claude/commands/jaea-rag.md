@@ -1,5 +1,9 @@
 # jaea-rag
 
+This is a Claude Code shortcut for the standard invocation:
+
+`jaea-rag "検索キーワード"`
+
 Use the repository-local JAEA RAG skill for the following search keyword:
 
 `$ARGUMENTS`
