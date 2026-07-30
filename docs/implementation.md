@@ -3,6 +3,8 @@
 ## 進捗
 
 - [x] `a8b9877` JAEA特許・報告書スクレイピング成果、出力データ、RAG仕様書を追加
+- [x] `9830056` Codex向け `AGENTS.md` と `uv` 依存管理方針を追加
+- [x] Codex/Claude Code起動時に `jaea-rag "検索キーワード"` をRAG検索として扱う導線を追加する。
 
 ## Step 1: DuckDB導入
 
@@ -33,7 +35,9 @@
 
 実装項目:
 
-- [ ] ユーザクエリを受け取る。
+- [ ] skill名と検索キーワードを受け取る。
+- [ ] 入力形式は `jaea-rag "検索キーワード"` とする。
+- [ ] `検索キーワード` をDuckDB検索用のクエリ文字列として扱う。
 - [ ] DuckDBから関連資料を検索する。
 - [ ] 結果をMarkdownまたはJSONで返す。
 - [ ] 関連理由、技術分類、詳細URL、PDFリンクを整形して返す。
@@ -42,12 +46,17 @@
 
 作成候補:
 
-- `$CODEX_HOME/skills/jaea-rag/SKILL.md`
+- `skills/jaea-rag/SKILL.md`
+- `.claude/commands/jaea-rag.md`
+- 必要に応じて `$CODEX_HOME/skills/jaea-rag/SKILL.md` へ同期する。
 
 skillに含める内容:
 
 - [ ] DuckDBの場所
 - [ ] 検索スクリプトの実行方法
+- [ ] skill呼び出し形式: `jaea-rag "検索キーワード"`
+- [ ] Claude Code用の呼び出し形式: `/jaea-rag 検索キーワード`
+- [ ] DuckDB未実装時のMarkdown/CSVフォールバック
 - [ ] 結果の読み方
 - [ ] ユーザへの返答フォーマット
 - [ ] 検索語展開の方針

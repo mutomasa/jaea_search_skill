@@ -6,6 +6,17 @@
 
 - 全体仕様: @CLAUDE.md
 - 実装計画: @docs/implementation.md
+- 共通skill仕様: @skills/jaea-rag/SKILL.md
+
+## 起動時の利用方法
+
+Codexでこのリポジトリを開いた場合は、本ファイルをプロジェクト指示として読み込む。ユーザが `jaea-rag "検索キーワード"` と入力した場合は、JAEA特許・報告書RAG検索として扱う。
+
+DuckDB検索スクリプトが未実装または利用不能な場合は、以下の既存成果物をフォールバックとして参照する。
+
+- `jaea/output/jaea_patents_ai_curated.md`
+- `jaea/output/jaea_reports_cv_ar_high_confidence.md`
+- `jaea/output/jaea_reports_cv_ar_candidates.md`
 
 ## 依存管理
 

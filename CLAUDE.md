@@ -182,6 +182,18 @@ skill名の候補:
 
 - `jaea-rag`
 
+## 起動時の利用方法
+
+Claude Codeでこのリポジトリを開いた場合は、本ファイルをプロジェクト指示として読み込む。ユーザが `jaea-rag "検索キーワード"` または `/jaea-rag 検索キーワード` と入力した場合は、JAEA特許・報告書RAG検索として扱う。
+
+Claude Code用のプロジェクトコマンドは @.claude/commands/jaea-rag.md に置く。共通のskill仕様は @skills/jaea-rag/SKILL.md を参照する。
+
+DuckDB検索スクリプトが未実装または利用不能な場合は、以下の既存成果物をフォールバックとして参照する。
+
+- `jaea/output/jaea_patents_ai_curated.md`
+- `jaea/output/jaea_reports_cv_ar_high_confidence.md`
+- `jaea/output/jaea_reports_cv_ar_candidates.md`
+
 skillの役割:
 
 - ユーザの研究アイディア、技術テーマ、仮説、製品案を受け取る。
