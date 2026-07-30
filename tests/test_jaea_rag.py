@@ -177,12 +177,15 @@ def test_build_database_and_search(tmp_path: Path) -> None:
     assert summary["patents_all"] == 1
     assert summary["reports_all"] == 1
     assert summary["rag_documents"] == 2
+    assert summary["rag_chunks"] > summary["rag_documents"]
 
     results = search_database(db_path, "3Dモデル生成", limit=5)
 
     assert len(results) == 2
     assert results[0].doc_type == "report"
     assert "3次元" in results[0].title
+    assert results[0].evidence_chunks
+    assert "chunk_source" in results[0].evidence_chunks[0]
     assert any(result.doc_type == "patent" and result.doc_id == "P53320" for result in results)
 
     ar_results = search_database(db_path, "AR", limit=5)

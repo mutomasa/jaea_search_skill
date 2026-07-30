@@ -1,14 +1,15 @@
 # JAEA特許・報告書検索システム
 
-JAEAの特許データと報告書データをDuckDBに取り込み、CodexまたはClaude Codeから `jaea-search "検索キーワード"` で関連資料を探すためのローカル検索システムです。
+JAEAの特許データと報告書データをDuckDBに取り込み、CodexまたはClaude Codeから `jaea-search "検索キーワード"` で関連資料を探すためのローカルRAG検索システムです。
 
-現状は厳密なRAGではなく、DuckDB上に統合した文書テーブルを対象にしたキーワード検索とルールベースランキングです。RAGとして使うためのデータ構造とエージェント導線は用意しており、ベクトル化・インデックス化・LLMへの根拠chunk投入は将来実装として扱います。
+現状は、DuckDB上の統合文書テーブル `rag_documents` をchunk化し、各chunkにローカルembeddingを付与して、上位chunkを根拠として提示するRAG構成です。embeddingは外部APIやモデルダウンロードに依存しない `local-hashed-ngram-v1` で、日本語・英語混在テキストを扱えるよう文字n-gramと英数字tokenをベクトル化します。
 
 ## できること
 
 - JAEA特許データと報告書データを横断検索する。
 - 研究アイディアや技術キーワードに関連する特許・報告書を提示する。
 - 関連理由、技術分類、詳細URL、PDFリンクをMarkdownまたはJSONで出力する。
+- 上位chunkを根拠として、どの本文断片に反応したかを提示する。
 - 画像処理、Computer vision、AR mapping、3Dモデル生成、空間マッピング、線量マッピング、遠隔ロボット系の資料を探す。
 - DuckDBが未作成の場合は、検索スクリプトから自動構築する。
 
@@ -19,17 +20,20 @@ JAEAの特許データと報告書データをDuckDBに取り込み、Codexま�
 1. `jaea/output` のCSV/JSONLを入力データとして使う。
 2. `jaea/scripts/build_duckdb.py` がDuckDBに各データを取り込む。
 3. 特許と報告書を横断検索するための `rag_documents` テーブルを作る。
-4. `jaea/scripts/search_rag.py` が検索キーワードを受け取り、`rag_documents` を検索する。
-5. タイトル、分類、キーワード、根拠文、概要の一致状況から関連度を計算する。
-6. 結果を特許と報告書に分け、理由、詳細URL、PDFリンク付きで返す。
+4. `rag_documents` から `rag_chunks` を作り、タイトル、概要、根拠文、キーワード、PDF由来テキストを検索単位に分割する。
+5. 各chunkに固定長embeddingを付与し、DuckDB内のベクトル列に保存する。
+6. `jaea/scripts/search_rag.py` が検索キーワードを受け取り、クエリembeddingとchunk embeddingの類似度、キーワード一致、既存スコアを組み合わせて検索する。
+7. 上位chunkを文書単位に集約し、特許と報告書に分け、根拠chunk、詳細URL、PDFリンク付きで返す。
 
-現在の検索は、意味ベクトル検索ではありません。日本語・英語のキーワード展開、文字列一致、文脈フィルタ、手動スコアリングで関連資料を探します。
+短い検索語では偶然一致を避けるためキーワード一致を重視し、複数語や長い研究アイディアではembedding類似度も使います。
 
 DuckDBは以下の役割を持ちます。
 
 - 特許・報告書データのローカルDB
 - 全件データと抽出候補の統合
 - `rag_documents` による横断検索用の文書テーブル
+- `rag_chunks` によるchunk単位の根拠テーブル
+- `embedding` 列によるローカルベクトル検索用データ
 
 検索CLIはDuckDBを読む実行プログラムで、スキルはCodex / Claude Codeにその使い方と返答形式を教える指示ファイルです。
 
@@ -78,6 +82,7 @@ jaea/scripts/search_rag.py
 - `jaea/jaea.duckdb` を読む。
 - DuckDBがなければ `jaea/output` から自動構築する。
 - 特許・報告書を横断検索する。
+- chunk embeddingから関連chunkを探す。
 - MarkdownまたはJSONで結果を出力する。
 
 スキルは、Codex / Claude Codeに「検索CLIをどう使うか」と「結果をどう説明するか」を教える説明書です。
@@ -91,6 +96,7 @@ skills/jaea-search/SKILL.md
 - `jaea-search "検索キーワード"` をJAEA特許・報告書検索として認識させる。
 - 検索CLIを実行するよう案内する。
 - 結果を「関連特許」「関連報告書」「技術的接点」に整理して返す。
+- 上位chunkをLLM回答の根拠として使う。
 - DuckDBや検索CLIが使えない場合のフォールバック先を示す。
 
 要するに、検索CLIは検索エンジン本体で、スキルはエージェント用の操作説明です。ユーザは通常、次の形式だけ覚えれば十分です。
@@ -165,6 +171,9 @@ DuckDB構築後の主なテーブル:
 - `reports_cv_ar_candidates`
 - `reports_cv_ar_high_confidence`
 - `rag_documents`
+- `rag_chunks`
+
+`rag_chunks` には、文書ID、chunk番号、chunk種別、chunk本文、embedding、参照URL、PDFリンクが入ります。
 
 ## テスト
 
@@ -174,7 +183,7 @@ DuckDB構築後の主なテーブル:
 uv run pytest
 ```
 
-現在のテストでは、入力形式、DuckDB構築、検索ランキング、`AR` と `Ar`/`argon` の誤一致回避を確認します。
+現在のテストでは、入力形式、DuckDB構築、chunk/embedding生成、検索ランキング、根拠chunk出力、`AR` と `Ar`/`argon` の誤一致回避を確認します。
 
 ## 注意
 
@@ -182,17 +191,20 @@ uv run pytest
 - `AR` はアルゴンの `Ar` と誤一致しやすいため、検索スクリプト側で文脈フィルタを入れています。
 - `3D` や `三次元` は数値解析にも出るため、画像、カメラ、マッピング、点群、ロボット、可視化などの文脈を重視してランキングします。
 
-## 将来のRAG実装
+## RAG実装
 
-厳密なRAGに寄せる場合は、次を実装します。
+実装済み:
 
-1. `rag_documents` をchunk化する。
-   - タイトル、概要、根拠文、キーワード、PDF由来テキストを検索単位に分割する。
-2. 各chunkにembeddingを付与する。
-   - 日本語・英語混在の技術文書に対応した埋め込みモデルを使う。
-3. DuckDB VSS拡張またはベクトル列で類似検索する。
-   - キーワード一致だけでなく、意味的に近い特許・報告書を拾えるようにする。
-4. 上位chunkをLLM回答の根拠として渡す。
-   - 回答には参照元、該当chunk、詳細URL、PDFリンクを含める。
+- `rag_documents` のchunk化
+- タイトル、概要、根拠文、キーワード、PDF由来テキストの検索単位化
+- 各chunkへの `local-hashed-ngram-v1` embedding付与
+- DuckDBの `rag_chunks.embedding` 列への固定長ベクトル保存
+- chunk類似度、キーワード一致、既存スコアを組み合わせたハイブリッド検索
+- 上位chunkを根拠としてMarkdown/JSONに出力
+- 参照元、該当chunk、詳細URL、PDFリンクの提示
 
-この段階まで実装したものを、厳密な意味でのRAGシステムと呼ぶ。
+今後の改善:
+
+- DuckDB VSS拡張でANN検索を使う。
+- `sentence-transformers` などの意味embeddingモデルに差し替える。
+- PDF本文抽出パイプラインを追加し、PDF由来テキストのカバレッジを増やす。

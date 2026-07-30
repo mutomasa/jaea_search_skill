@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import sys
 from pathlib import Path
 from typing import Iterable
 
@@ -12,6 +13,10 @@ import duckdb
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
+
+from jaea.scripts.rag_embeddings import EMBEDDING_DIM, chunk_text, embed_text, pack_embedding  # noqa: E402
+
 OUTPUT_DIR = REPO_ROOT / "jaea" / "output"
 DEFAULT_DB_PATH = REPO_ROOT / "jaea" / "jaea.duckdb"
 
@@ -23,6 +28,7 @@ SOURCE_FILES = {
     "reports_cv_ar_candidates": OUTPUT_DIR / "jaea_reports_cv_ar_candidates.csv",
     "reports_cv_ar_high_confidence": OUTPUT_DIR / "jaea_reports_cv_ar_high_confidence.csv",
 }
+INSERT_BATCH_SIZE = 1000
 
 RAG_COLUMNS = [
     "doc_type",
@@ -40,6 +46,7 @@ RAG_COLUMNS = [
     "pdf_links",
     "source_table",
     "search_text",
+    "pdf_text",
 ]
 
 
@@ -112,6 +119,7 @@ def patent_row(row: dict[str, str], source_table: str) -> dict[str, object]:
     categories = ", ".join(part for part in [row.get("bucket", ""), row.get("category", "")] if part)
     keywords = row.get("matched_keywords", "")
     evidence = row.get("reason", "") or keywords
+    pdf_text = row.get("pdf_text", "") or row.get("full_text", "") or row.get("text", "")
     return {
         "doc_type": "patent",
         "doc_id": row.get("patent_id", ""),
@@ -127,7 +135,8 @@ def patent_row(row: dict[str, str], source_table: str) -> dict[str, object]:
         "detail_url": row.get("detail_url", ""),
         "pdf_links": row.get("pdf_links", ""),
         "source_table": source_table,
-        "search_text": make_search_text(title, abstract, categories, keywords, evidence, row.get("ipc", "")),
+        "search_text": make_search_text(title, abstract, categories, keywords, evidence, row.get("ipc", ""), pdf_text),
+        "pdf_text": pdf_text,
     }
 
 
@@ -137,6 +146,7 @@ def report_row(row: dict[str, str], source_table: str) -> dict[str, object]:
     categories = row.get("categories", "")
     keywords = row.get("keywords", "") or row.get("matched_keywords", "")
     evidence = row.get("evidence_text", "") or row.get("matched_keywords", "")
+    pdf_text = row.get("pdf_text", "") or row.get("full_text", "") or row.get("text", "")
     return {
         "doc_type": "report",
         "doc_id": row.get("report_id", ""),
@@ -152,7 +162,8 @@ def report_row(row: dict[str, str], source_table: str) -> dict[str, object]:
         "detail_url": row.get("detail_url", ""),
         "pdf_links": row.get("pdf_links", ""),
         "source_table": source_table,
-        "search_text": make_search_text(title, row.get("title_en", ""), abstract, categories, keywords, evidence),
+        "search_text": make_search_text(title, row.get("title_en", ""), abstract, categories, keywords, evidence, pdf_text),
+        "pdf_text": pdf_text,
     }
 
 
@@ -197,7 +208,8 @@ def create_rag_documents(conn: duckdb.DuckDBPyConnection, rows: list[dict[str, o
             detail_url VARCHAR,
             pdf_links VARCHAR,
             source_table VARCHAR,
-            search_text VARCHAR
+            search_text VARCHAR,
+            pdf_text VARCHAR
         )
         """
     )
@@ -218,13 +230,109 @@ def create_rag_documents(conn: duckdb.DuckDBPyConnection, rows: list[dict[str, o
             row["pdf_links"],
             row["source_table"],
             row["search_text"],
+            row["pdf_text"],
         ]
         for row in rows
     ]
     conn.executemany(
-        "INSERT INTO rag_documents VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO rag_documents VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         values,
     )
+
+
+def make_document_chunks(row: dict[str, object]) -> list[dict[str, object]]:
+    sections = [
+        ("title", f"タイトル: {row['title']}"),
+        (
+            "metadata",
+            make_search_text(
+                f"タイトル: {row['title']}",
+                f"キーワード: {row['keywords']}",
+                f"分類: {row['categories']}",
+                f"根拠文: {row['evidence']}",
+                f"概要: {row['abstract']}",
+            ),
+        ),
+        ("pdf_text", f"PDF本文: {row['pdf_text']}"),
+    ]
+    chunks: list[dict[str, object]] = []
+    chunk_index = 0
+    for source, text in sections:
+        content = make_search_text(str(text))
+        if not content or (source == "pdf_text" and not row["pdf_text"]):
+            continue
+        for chunk in chunk_text(content):
+            chunk_index += 1
+            chunks.append(
+                {
+                    "chunk_id": f"{row['doc_type']}:{row['doc_id']}:{chunk_index}",
+                    "doc_type": row["doc_type"],
+                    "doc_id": row["doc_id"],
+                    "doc_no": row["doc_no"],
+                    "title": row["title"],
+                    "chunk_index": chunk_index,
+                    "chunk_source": source,
+                    "chunk_text": chunk,
+                    "embedding": pack_embedding(embed_text(chunk)),
+                    "embedding_dim": EMBEDDING_DIM,
+                    "embedding_model": f"local-hashed-ngram-v1:{EMBEDDING_DIM}",
+                    "detail_url": row["detail_url"],
+                    "pdf_links": row["pdf_links"],
+                    "source_table": row["source_table"],
+                }
+            )
+    return chunks
+
+
+def create_rag_chunks(conn: duckdb.DuckDBPyConnection, rows: list[dict[str, object]]) -> None:
+    conn.execute("DROP TABLE IF EXISTS rag_chunks")
+    conn.execute(
+        """
+        CREATE TABLE rag_chunks (
+            chunk_id VARCHAR,
+            doc_type VARCHAR,
+            doc_id VARCHAR,
+            doc_no VARCHAR,
+            title VARCHAR,
+            chunk_index INTEGER,
+            chunk_source VARCHAR,
+            chunk_text VARCHAR,
+            embedding BLOB,
+            embedding_dim INTEGER,
+            embedding_model VARCHAR,
+            detail_url VARCHAR,
+            pdf_links VARCHAR,
+            source_table VARCHAR
+        )
+        """
+    )
+    insert_sql = "INSERT INTO rag_chunks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    batch: list[list[object]] = []
+    for document in rows:
+        for row in make_document_chunks(document):
+            batch.append(
+                [
+                    row["chunk_id"],
+                    row["doc_type"],
+                    row["doc_id"],
+                    row["doc_no"],
+                    row["title"],
+                    row["chunk_index"],
+                    row["chunk_source"],
+                    row["chunk_text"],
+                    row["embedding"],
+                    row["embedding_dim"],
+                    row["embedding_model"],
+                    row["detail_url"],
+                    row["pdf_links"],
+                    row["source_table"],
+                ]
+            )
+            if len(batch) >= INSERT_BATCH_SIZE:
+                conn.executemany(insert_sql, batch)
+                batch.clear()
+    if batch:
+        conn.executemany(insert_sql, batch)
 
 
 def build_database(db_path: Path = DEFAULT_DB_PATH, output_dir: Path = OUTPUT_DIR) -> dict[str, int]:
@@ -239,10 +347,11 @@ def build_database(db_path: Path = DEFAULT_DB_PATH, output_dir: Path = OUTPUT_DI
 
         rag_rows = build_rag_rows(source_rows)
         create_rag_documents(conn, rag_rows)
+        create_rag_chunks(conn, rag_rows)
 
         summary = {
             table: conn.execute(f"SELECT count(*) FROM {quote_identifier(table)}").fetchone()[0]
-            for table in [*SOURCE_FILES.keys(), "rag_documents"]
+            for table in [*SOURCE_FILES.keys(), "rag_documents", "rag_chunks"]
         }
         conn.execute("CHECKPOINT")
         return summary

@@ -33,7 +33,7 @@
 2. 特許データと報告書データを統一的に検索できるDuckDBスキーマを作る。
 3. ユーザのアイディア文から関連しそうな特許・報告書を検索するskillを作る。
 4. skillは検索結果をそのまま返すだけでなく、関連理由、技術分類、活用可能性、詳細URL、PDFリンクを整理して提示する。
-5. まずはローカル完結のシステムとして実装し、将来的に埋め込みベクトル検索やWeb UIに拡張できる設計にする。
+5. まずはローカル完結のシステムとして実装し、chunk embedding検索やWeb UIに拡張できる設計にする。
 
 ## 依存管理
 
@@ -129,6 +129,8 @@ DuckDBファイルは以下を想定する。
   - Computer vision / AR mapping系の高信頼候補
 - `rag_documents`
   - 特許・報告書を横断検索するための統合ビューまたは実体テーブル
+- `rag_chunks`
+  - `rag_documents` を検索単位に分割し、embeddingと根拠本文を保持する実体テーブル
 
 `rag_documents` の想定カラム:
 
@@ -148,30 +150,56 @@ DuckDBファイルは以下を想定する。
 - `pdf_links`
 - `source_table`
 - `search_text`
+- `pdf_text`
 
 `search_text` にはタイトル、概要、キーワード、分類、根拠文を連結し、全文検索または類似検索に使う。
 
+`rag_chunks` の想定カラム:
+
+- `chunk_id`
+- `doc_type`
+- `doc_id`
+- `doc_no`
+- `title`
+- `chunk_index`
+- `chunk_source`
+- `chunk_text`
+- `embedding`
+- `embedding_dim`
+- `embedding_model`
+- `detail_url`
+- `pdf_links`
+- `source_table`
+
 ## 検索方式
 
-初期実装では、以下の順で実装する。
+実装済みの検索方式は以下とする。
 
-1. DuckDB SQLによるキーワード検索
-   - `LIKE`
-   - `regexp_matches`
-   - 日本語・英語キーワードのOR検索
-2. スコアリング
+1. chunk化
+   - タイトル、概要、根拠文、キーワード、PDF由来テキストを検索単位に分割する。
+2. embedding付与
+   - 外部APIやモデルダウンロードに依存しない `local-hashed-ngram-v1` を使う。
+   - 日本語・英語混在の技術文書に対応するため、文字n-gramと英数字tokenを固定長ベクトル化する。
+3. ハイブリッド検索
+   - クエリembeddingとchunk embeddingのcosine類似度を計算する。
+   - 短い検索語では偶然一致を避けるため、キーワード一致を重視する。
+   - 日本語・英語キーワードのOR検索も併用する。
+4. スコアリング
    - タイトル一致を高く評価
    - 概要一致を中程度に評価
    - キーワード・分類一致を高く評価
    - 既存の `score` や `categories` を補助的に利用
-3. 結果整形
+5. 結果整形
    - 上位候補を特許・報告書に分けて提示
+   - 上位chunkを根拠として提示
    - 関連理由を短く説明
    - 詳細URLとPDFリンクを付ける
 
 将来拡張:
 
-- DuckDB VSS拡張または別途ベクトルDBによる埋め込み検索
+- DuckDB VSS拡張によるANN検索
+- `sentence-transformers` などの意味embeddingモデルへの差し替え
+- PDF本文抽出パイプライン
 - 日本語形態素解析による検索語展開
 - LLMによるクエリ拡張
 - Streamlit等の簡易UI

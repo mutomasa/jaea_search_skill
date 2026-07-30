@@ -41,10 +41,12 @@ Fallback files when DuckDB or the search script is unavailable:
    ```
 
 2. If `jaea/jaea.duckdb` does not exist, the search script builds it automatically from `jaea/output`.
-3. If the DuckDB search path is unavailable, search the fallback Markdown/CSV/JSONL files with `rg`.
-4. Prefer high-confidence report candidates before broad candidates.
-5. Always include patents and reports separately when both are relevant.
-6. Treat results as related technical references, not legal patent clearance.
+3. The search script uses `rag_chunks` embeddings, keyword matches, and source scores to rank results.
+4. Use the returned evidence chunks as the grounding context for the answer.
+5. If the DuckDB search path is unavailable, search the fallback Markdown/CSV/JSONL files with `rg`.
+6. Prefer high-confidence report candidates before broad candidates.
+7. Always include patents and reports separately when both are relevant.
+8. Treat results as related technical references, not legal patent clearance.
 
 ## Response Format
 
@@ -63,6 +65,7 @@ For each result, include:
 - Title
 - Document ID or report number
 - Why it is related
+- Evidence chunk
 - Detail URL
 - PDF link when available
 

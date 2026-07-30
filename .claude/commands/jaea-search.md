@@ -24,4 +24,4 @@ If the search script or DuckDB is unavailable, search these fallback files:
 - `jaea/output/jaea_reports_cv_ar_high_confidence.md`
 - `jaea/output/jaea_reports_cv_ar_candidates.md`
 
-Return related patents and reports separately, with reasons and links.
+Return related patents and reports separately, with evidence chunks, reasons, and links.

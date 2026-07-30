@@ -90,15 +90,23 @@ skillに含める内容:
 - [x] DuckDB構築と検索結果ランキングを検証する。
 - [x] `AR` と `Ar`/`argon` の誤一致回避を検証する。
 
-## Step 7: 将来のRAG実装
+## Step 7: RAG実装
 
-厳密なRAGに寄せる場合は、以下を実装する。
+DuckDB内にchunkとembeddingを保持し、上位chunkを根拠として返す。
 
-- [ ] `rag_documents` をchunk化する。
-- [ ] タイトル、概要、根拠文、キーワード、PDF由来テキストを検索単位に分割する。
-- [ ] 各chunkにembeddingを付与する。
-- [ ] 日本語・英語混在の技術文書に対応した埋め込みモデルを使う。
-- [ ] DuckDB VSS拡張またはベクトル列で類似検索する。
-- [ ] キーワード一致だけでなく、意味的に近い特許・報告書を拾えるようにする。
-- [ ] 上位chunkをLLM回答の根拠として渡す。
-- [ ] 回答には参照元、該当chunk、詳細URL、PDFリンクを含める。
+現在のembeddingは、外部APIやモデルダウンロードを使わない `local-hashed-ngram-v1` とする。日本語・英語混在の技術文書を扱うため、文字n-gramと英数字tokenを固定長ベクトル化する。将来的には、このembedding生成部分を `sentence-transformers` などの意味embeddingモデルへ差し替え、検索部分をDuckDB VSS拡張によるANN検索へ置き換えられる構造にする。
+
+- [x] `rag_documents` をchunk化する。
+- [x] タイトル、概要、根拠文、キーワード、PDF由来テキストを検索単位に分割する。
+- [x] 各chunkにembeddingを付与する。
+- [x] 日本語・英語混在の技術文書に対応したローカルembeddingモデルを使う。
+- [x] DuckDBのベクトル列で類似検索用データを保持する。
+- [x] キーワード一致だけでなく、embedding類似度も使って近い特許・報告書を拾う。
+- [x] 上位chunkをLLM回答の根拠として渡せる形で出力する。
+- [x] 回答には参照元、該当chunk、詳細URL、PDFリンクを含める。
+
+今後の改善:
+
+- [ ] DuckDB VSS拡張によるANN検索を追加する。
+- [ ] `sentence-transformers` などの意味embeddingモデルに差し替える。
+- [ ] PDF本文抽出パイプラインを追加し、PDF由来テキストのカバレッジを増やす。
