@@ -1,14 +1,14 @@
-# jaea-rag
+# jaea-search
 
 This is a Claude Code shortcut for the standard invocation:
 
-`jaea-rag "検索キーワード"`
+`jaea-search "検索キーワード"`
 
-Use the repository-local JAEA RAG skill for the following search keyword:
+Use the repository-local JAEA search skill for the following search keyword:
 
 `$ARGUMENTS`
 
-Follow @skills/jaea-rag/SKILL.md.
+Follow @skills/jaea-search/SKILL.md.
 
 If `jaea/scripts/search_rag.py` exists, run:
 

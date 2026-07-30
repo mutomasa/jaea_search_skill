@@ -89,13 +89,13 @@ class SearchResult:
 
 def parse_invocation(argv: list[str]) -> str:
     if not argv:
-        raise ValueError('検索キーワードを指定してください: jaea-rag "検索キーワード"')
+        raise ValueError('検索キーワードを指定してください: jaea-search "検索キーワード"')
     args = list(argv)
-    if args[0] in {"jaea-rag", "/jaea-rag"}:
+    if args[0] in {"jaea-search", "/jaea-search", "jaea-rag", "/jaea-rag"}:
         args = args[1:]
     query = " ".join(args).strip()
     if not query:
-        raise ValueError('検索キーワードを指定してください: jaea-rag "検索キーワード"')
+        raise ValueError('検索キーワードを指定してください: jaea-search "検索キーワード"')
     return query
 
 
@@ -235,7 +235,7 @@ def format_markdown(query: str, results: list[SearchResult]) -> str:
     patents = [result for result in results if result.doc_type == "patent"]
     reports = [result for result in results if result.doc_type == "report"]
     lines = [
-        f"# JAEA RAG検索: {query}",
+        f"# JAEA検索: {query}",
         "",
         f"- 関連候補: {len(results)}件",
         f"- 特許: {len(patents)}件",
@@ -304,8 +304,8 @@ def split_comma_text(value: str) -> list[str]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Search JAEA RAG data. Standard form: jaea-rag "検索キーワード"')
-    parser.add_argument("query", nargs="*", help='Use either "検索キーワード" or jaea-rag "検索キーワード".')
+    parser = argparse.ArgumentParser(description='Search JAEA patent and report data. Standard form: jaea-search "検索キーワード"')
+    parser.add_argument("query", nargs="*", help='Use either "検索キーワード" or jaea-search "検索キーワード".')
     parser.add_argument("--db", type=Path, default=DEFAULT_DB_PATH)
     parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT)
     parser.add_argument("--format", choices=["markdown", "json"], default="markdown")

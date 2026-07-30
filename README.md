@@ -1,6 +1,6 @@
 # JAEA特許・報告書検索システム
 
-JAEAの特許データと報告書データをDuckDBに取り込み、CodexまたはClaude Codeから `jaea-rag "検索キーワード"` で関連資料を探すためのローカル検索システムです。
+JAEAの特許データと報告書データをDuckDBに取り込み、CodexまたはClaude Codeから `jaea-search "検索キーワード"` で関連資料を探すためのローカル検索システムです。
 
 現状は厳密なRAGではなく、DuckDB上に統合した文書テーブルを対象にしたキーワード検索とルールベースランキングです。RAGとして使うためのデータ構造とエージェント導線は用意しており、ベクトル化・インデックス化・LLMへの根拠chunk投入は将来実装として扱います。
 
@@ -39,30 +39,30 @@ DuckDBは以下の役割を持ちます。
 
 - Codex向け指示: [AGENTS.md](/Users/masa/eques/AGENTS.md)
 - Claude Code向け指示: [CLAUDE.md](/Users/masa/eques/CLAUDE.md)
-- 共通skill仕様: [skills/jaea-rag/SKILL.md](/Users/masa/eques/skills/jaea-rag/SKILL.md)
-- Claude Codeショートカット: [.claude/commands/jaea-rag.md](/Users/masa/eques/.claude/commands/jaea-rag.md)
+- 共通skill仕様: [skills/jaea-search/SKILL.md](/Users/masa/eques/skills/jaea-search/SKILL.md)
+- Claude Codeショートカット: [.claude/commands/jaea-search.md](/Users/masa/eques/.claude/commands/jaea-search.md)
 
 ## スキルの呼び方
 
 Codex / Claude Code共通の標準呼び出しは次です。
 
 ```text
-jaea-rag "検索キーワード"
+jaea-search "検索キーワード"
 ```
 
 例:
 
 ```text
-jaea-rag "3Dモデル生成"
-jaea-rag "カメラ画像 三次元図面"
-jaea-rag "線量マッピング 遠隔ロボット"
-jaea-rag "AR"
+jaea-search "3Dモデル生成"
+jaea-search "カメラ画像 三次元図面"
+jaea-search "線量マッピング 遠隔ロボット"
+jaea-search "AR"
 ```
 
 Claude Codeでは補助的なショートカットも使えます。
 
 ```text
-/jaea-rag 検索キーワード
+/jaea-search 検索キーワード
 ```
 
 ## スキルと検索CLIの違い
@@ -83,12 +83,12 @@ jaea/scripts/search_rag.py
 スキルは、Codex / Claude Codeに「検索CLIをどう使うか」と「結果をどう説明するか」を教える説明書です。
 
 ```text
-skills/jaea-rag/SKILL.md
+skills/jaea-search/SKILL.md
 ```
 
 スキルは次を行います。
 
-- `jaea-rag "検索キーワード"` をJAEA RAG検索として認識させる。
+- `jaea-search "検索キーワード"` をJAEA特許・報告書検索として認識させる。
 - 検索CLIを実行するよう案内する。
 - 結果を「関連特許」「関連報告書」「技術的接点」に整理して返す。
 - DuckDBや検索CLIが使えない場合のフォールバック先を示す。
@@ -96,7 +96,7 @@ skills/jaea-rag/SKILL.md
 要するに、検索CLIは検索エンジン本体で、スキルはエージェント用の操作説明です。ユーザは通常、次の形式だけ覚えれば十分です。
 
 ```text
-jaea-rag "ドローン"
+jaea-search "ドローン"
 ```
 
 ## 初回セットアップ
@@ -128,19 +128,19 @@ jaea/jaea.duckdb
 Markdownで検索します。
 
 ```bash
-uv run python jaea/scripts/search_rag.py jaea-rag "3Dモデル生成"
+uv run python jaea/scripts/search_rag.py jaea-search "3Dモデル生成"
 ```
 
 件数を指定します。
 
 ```bash
-uv run python jaea/scripts/search_rag.py jaea-rag "三次元図面" --limit 5
+uv run python jaea/scripts/search_rag.py jaea-search "三次元図面" --limit 5
 ```
 
 JSONで出力します。
 
 ```bash
-uv run python jaea/scripts/search_rag.py jaea-rag "カメラ画像" --format json
+uv run python jaea/scripts/search_rag.py jaea-search "カメラ画像" --format json
 ```
 
 DBが存在しない場合、`search_rag.py` が `jaea/output` のデータから自動でDuckDBを構築します。

@@ -139,8 +139,9 @@ def make_output_dir(tmp_path: Path) -> Path:
 
 
 def test_parse_invocation_accepts_standard_skill_form() -> None:
+    assert parse_invocation(["jaea-search", "3Dモデル生成"]) == "3Dモデル生成"
+    assert parse_invocation(["/jaea-search", "カメラ画像"]) == "カメラ画像"
     assert parse_invocation(["jaea-rag", "3Dモデル生成"]) == "3Dモデル生成"
-    assert parse_invocation(["/jaea-rag", "カメラ画像"]) == "カメラ画像"
     assert parse_invocation(["線量", "マッピング"]) == "線量 マッピング"
 
 
