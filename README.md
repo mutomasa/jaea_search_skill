@@ -47,10 +47,10 @@ DuckDBは以下の役割を持ちます。
 
 このリポジトリはCodexとClaude Codeの両方に対応しています。
 
-- Codex向け指示: [AGENTS.md](/Users/masa/eques/AGENTS.md)
-- Claude Code向け指示: [CLAUDE.md](/Users/masa/eques/CLAUDE.md)
-- 共通skill仕様: [skills/jaea-search/SKILL.md](/Users/masa/eques/skills/jaea-search/SKILL.md)
-- Claude Codeショートカット: [.claude/commands/jaea-search.md](/Users/masa/eques/.claude/commands/jaea-search.md)
+- Codex向け指示: [AGENTS.md](AGENTS.md)
+- Claude Code向け指示: [CLAUDE.md](CLAUDE.md)
+- 共通skill仕様: [skills/jaea-search/SKILL.md](skills/jaea-search/SKILL.md)
+- Claude Codeショートカット: [.claude/commands/jaea-search.md](.claude/commands/jaea-search.md)
 
 ## スキルの呼び方
 
@@ -174,7 +174,7 @@ DBが存在しない場合、`search_rag.py` が `jaea/output` のデータか�
 
 ## データ
 
-主な入力データは [jaea/output](/Users/masa/eques/jaea/output) にあります。
+主な入力データは [jaea/output](jaea/output) にあります。
 
 - 特許全件: `jaea_patents_all.csv`
 - AI/ML特許候補: `jaea_patents_ai_candidates.csv`
@@ -198,7 +198,7 @@ DuckDB構築後の主なテーブル:
 
 ## テスト
 
-単体テストはリポジトリ直下の [tests](/Users/masa/eques/tests) にあります。
+単体テストはリポジトリ直下の [tests](tests) にあります。
 
 ```bash
 uv run pytest

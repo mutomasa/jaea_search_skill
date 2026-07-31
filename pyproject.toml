@@ -3,6 +3,10 @@ name = "eques"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
+    "anthropic>=0.120.2",
     "duckdb>=1.5.5",
+    "httpx>=0.28.1",
+    "janome>=0.5.0",
+    "pypdf>=6.14.2",
     "pytest>=9.1.1",
 ]

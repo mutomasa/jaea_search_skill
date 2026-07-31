@@ -4,12 +4,22 @@ import hashlib
 import math
 import re
 import struct
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    pass
 
 
 EMBEDDING_DIM = 128
 MAX_CHUNK_CHARS = 700
 CHUNK_OVERLAP_CHARS = 120
 MAX_FEATURES = 512
+
+SENTENCE_TRANSFORMER_DIM = 384
+SENTENCE_TRANSFORMER_MODELS: dict[str, str] = {
+    "multilingual-e5-small": "intfloat/multilingual-e5-small",
+    "multilingual-minilm": "paraphrase-multilingual-MiniLM-L12-v2",
+}
 
 
 def normalize_text(value: str) -> str:
@@ -92,3 +102,47 @@ def unpack_embedding(value: bytes | bytearray | memoryview) -> list[float]:
     if not data:
         return []
     return list(struct.unpack(f"{len(data) // 4}f", data))
+
+
+def to_vector(value: object) -> list[float]:
+    """Convert DuckDB BLOB or FLOAT[] column value to list[float]."""
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return unpack_embedding(value)
+    if value is None:
+        return []
+    return list(value)
+
+
+class SentenceTransformerEmbedder:
+    """Semantic embedding using sentence-transformers (optional dependency).
+
+    Install with: uv add sentence-transformers
+    """
+
+    def __init__(self, model_name: str = "multilingual-e5-small") -> None:
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError as exc:
+            raise ImportError(
+                "sentence-transformers is not installed. Run: uv add sentence-transformers"
+            ) from exc
+        model_id = SENTENCE_TRANSFORMER_MODELS.get(model_name, model_name)
+        self._model = SentenceTransformer(model_id)
+        self.dim = SENTENCE_TRANSFORMER_DIM
+        self.model_name = model_name
+        self.model_id = model_id
+
+    def embed(self, text: str) -> list[float]:
+        vectors = self._model.encode([text], normalize_embeddings=True)
+        return vectors[0].tolist()
+
+    def embed_batch(self, texts: list[str], show_progress: bool = True) -> list[list[float]]:
+        vectors = self._model.encode(texts, normalize_embeddings=True, show_progress_bar=show_progress)
+        return [v.tolist() for v in vectors]
+
+
+def get_embedder(model_name: str) -> "SentenceTransformerEmbedder | None":
+    """Return SentenceTransformerEmbedder for semantic models, None for ngram."""
+    if not model_name or model_name.startswith("local-hashed-ngram"):
+        return None
+    return SentenceTransformerEmbedder(model_name)

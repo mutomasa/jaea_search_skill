@@ -16,7 +16,7 @@ import duckdb
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from jaea.scripts.rag_embeddings import cosine_similarity, embed_text, unpack_embedding  # noqa: E402
+from jaea.scripts.rag_embeddings import cosine_similarity, embed_text, get_embedder, to_vector, unpack_embedding  # noqa: E402
 
 DEFAULT_DB_PATH = REPO_ROOT / "jaea" / "jaea.duckdb"
 DEFAULT_LIMIT = 8
@@ -111,7 +111,61 @@ def normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
 
-def expand_query(query: str) -> list[str]:
+def _tokenize_jp(text: str) -> list[str]:
+    """Tokenize Japanese text with janome (optional). Falls back to empty list."""
+    try:
+        from janome.tokenizer import Tokenizer as JanomeTokenizer
+
+        tokenizer = JanomeTokenizer()
+        tokens = []
+        skip_pos = {"助詞", "助動詞", "記号", "補助記号", "接続詞", "感動詞", "空白", "接頭詞"}
+        for token in tokenizer.tokenize(text):
+            pos = token.part_of_speech.split(",")[0]
+            if pos in skip_pos:
+                continue
+            base = token.base_form
+            surface = token.surface
+            word = base if (base and base != "*") else surface
+            if len(word) < 2:
+                continue
+            tokens.append(word)
+
+        # Drop fragments that are strict sub-strings of words already in the original text
+        # (e.g. janome splits "ドローン" → "ド" + "ローン"; "ローン" ⊂ "ドローン" → discard)
+        original_words = {w for w in re.split(r"[\s,、/／]+", text) if w}
+        tokens = [t for t in tokens if not any(t in w and t != w for w in original_words)]
+        return tokens
+    except ImportError:
+        return []
+
+
+def _expand_with_llm(query: str) -> list[str]:
+    """Ask Claude Haiku for related keywords. Returns [] on any error."""
+    try:
+        import anthropic
+
+        client = anthropic.Anthropic()
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=150,
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        "以下の研究・技術検索クエリに関連する日本語・英語キーワードを5個以内で"
+                        "カンマ区切りで出力してください。余分な説明は不要です。\n\n"
+                        f"クエリ: {query}"
+                    ),
+                }
+            ],
+        )
+        text = response.content[0].text.strip()
+        return [t.strip() for t in re.split(r"[,、，]", text) if t.strip()][:5]
+    except Exception:
+        return []
+
+
+def expand_query(query: str, use_llm: bool = False) -> list[str]:
     terms = [normalize_text(query)]
     lowered = query.lower()
     for key, expansions in QUERY_EXPANSIONS.items():
@@ -121,6 +175,9 @@ def expand_query(query: str) -> list[str]:
         part = normalize_text(part)
         if len(part) >= 2:
             terms.append(part)
+    terms.extend(_tokenize_jp(query))
+    if use_llm:
+        terms.extend(_expand_with_llm(query))
     return unique([term for term in terms if term])
 
 
@@ -139,8 +196,29 @@ def split_terms(value: str) -> list[str]:
     return [term for term in value.split(" | ") if term]
 
 
-def search_database(db_path: Path, query: str, limit: int = DEFAULT_LIMIT) -> list[SearchResult]:
-    terms = expand_query(query)
+def _get_chunk_schema(conn: duckdb.DuckDBPyConnection) -> dict[str, str]:
+    return dict(
+        conn.execute(
+            "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'rag_chunks'"
+        ).fetchall()
+    )
+
+
+def _get_embedding_model(conn: duckdb.DuckDBPyConnection) -> str:
+    row = conn.execute("SELECT DISTINCT embedding_model FROM rag_chunks LIMIT 1").fetchone()
+    return (row[0] or "") if row else ""
+
+
+def _has_vss(conn: duckdb.DuckDBPyConnection) -> bool:
+    try:
+        conn.execute("LOAD vss")
+        return True
+    except Exception:
+        return False
+
+
+def search_database(db_path: Path, query: str, limit: int = DEFAULT_LIMIT, use_llm: bool = False) -> list[SearchResult]:
+    terms = expand_query(query, use_llm=use_llm)
     conn = duckdb.connect(str(db_path), read_only=True)
     try:
         document_rows = conn.execute(
@@ -231,41 +309,69 @@ def rank_chunks(
     terms: list[str],
     limit: int,
 ) -> list[dict[str, object]]:
-    query_embedding = embed_text(" ".join(terms))
-    rows = conn.execute(
-        """
-        SELECT
-            chunk_id,
-            doc_type,
-            doc_id,
-            doc_no,
-            title,
-            chunk_index,
-            chunk_source,
-            chunk_text,
-            embedding,
-            embedding_dim,
-            detail_url,
-            pdf_links,
-            source_table
-        FROM rag_chunks
-        """,
-    ).fetchall()
-    columns = [column[0] for column in conn.description]
+    schema = _get_chunk_schema(conn)
+    embedding_type = schema.get("embedding", "BLOB")
+    use_float_array = embedding_type.startswith("FLOAT[")
+
+    # Determine query embedding: use matching model if FLOAT[] schema
+    if use_float_array:
+        model_label = _get_embedding_model(conn)
+        model_name = model_label.split(":")[0] if ":" in model_label else model_label
+        embedder = get_embedder(model_name)
+        if embedder is not None:
+            query_embedding = embedder.embed(" ".join(terms))
+        else:
+            from jaea.scripts.rag_embeddings import EMBEDDING_DIM
+            query_embedding = embed_text(" ".join(terms), dim=EMBEDDING_DIM)
+    else:
+        query_embedding = embed_text(" ".join(terms))
+
+    # Use SQL-side similarity when FLOAT[] (faster; HNSW index used if present)
+    if use_float_array and _has_vss(conn):
+        dim = int(embedding_type.split("[")[1].rstrip("]"))
+        raw_rows = conn.execute(
+            f"""
+            SELECT
+                chunk_id, doc_type, doc_id, doc_no, title,
+                chunk_index, chunk_source, chunk_text,
+                embedding, embedding_dim, detail_url, pdf_links, source_table,
+                array_cosine_similarity(embedding, ?::FLOAT[{dim}]) AS vss_sim
+            FROM rag_chunks
+            ORDER BY vss_sim DESC
+            LIMIT ?
+            """,
+            [query_embedding, max(limit * 6, 200)],
+        ).fetchall()
+        columns = [c[0] for c in conn.description]
+        rows_with_sim = []
+        for raw in raw_rows:
+            row = dict(zip(columns, raw))
+            row["_precomputed_sim"] = float(row.pop("vss_sim") or 0.0)
+            rows_with_sim.append(row)
+    else:
+        raw_rows = conn.execute(
+            """
+            SELECT
+                chunk_id, doc_type, doc_id, doc_no, title,
+                chunk_index, chunk_source, chunk_text,
+                embedding, embedding_dim, detail_url, pdf_links, source_table
+            FROM rag_chunks
+            """,
+        ).fetchall()
+        columns = [c[0] for c in conn.description]
+        rows_with_sim = [dict(zip(columns, r)) for r in raw_rows]
+        for row in rows_with_sim:
+            row["_precomputed_sim"] = cosine_similarity(query_embedding, to_vector(row["embedding"] or b""))
 
     ranked = []
-    for raw_row in rows:
-        row = dict(zip(columns, raw_row))
+    for row in rows_with_sim:
         chunk_text_value = str(row.get("chunk_text", ""))
         matched = matched_terms(chunk_text_value, terms)
         if is_ar_false_positive(query, matched):
             continue
-        similarity = cosine_similarity(query_embedding, unpack_embedding(row["embedding"] or b""))
+        similarity = row["_precomputed_sim"]
         keyword_score = 12 * len(split_terms(matched))
-        source_boost = {"title": 35, "metadata": 24, "pdf_text": 12}.get(
-            str(row.get("chunk_source", "")),
-            0,
-        )
+        source_boost = {"title": 35, "metadata": 24, "pdf_text": 12}.get(str(row.get("chunk_source", "")), 0)
         curated_boost = 8 if row.get("source_table") in {"patents_ai_curated", "reports_cv_ar_high_confidence"} else 0
         chunk_rank_score = round(similarity * 100) + keyword_score + source_boost + curated_boost
         if matched or (allow_semantic_only(query) and similarity >= 0.28):
@@ -273,7 +379,7 @@ def rank_chunks(
             row["similarity"] = similarity
             row["chunk_rank_score"] = chunk_rank_score
             ranked.append(row)
-    ranked.sort(key=lambda row: (row["chunk_rank_score"], row["similarity"], row["title"]), reverse=True)
+    ranked.sort(key=lambda r: (r["chunk_rank_score"], r["similarity"], r["title"]), reverse=True)
     return ranked[:limit]
 
 
@@ -390,7 +496,9 @@ def ensure_database(db_path: Path) -> None:
                     """
                 ).fetchall()
             )
-            if schema.get("embedding") == "BLOB" and schema.get("embedding_dim") == "INTEGER":
+            embedding_type = schema.get("embedding", "")
+            has_valid_embedding = embedding_type == "BLOB" or embedding_type.startswith("FLOAT[")
+            if has_valid_embedding and schema.get("embedding_dim") == "INTEGER":
                 rebuild = False
         except duckdb.CatalogException:
             pass
@@ -494,12 +602,13 @@ def main() -> int:
     parser.add_argument("--db", type=Path, default=DEFAULT_DB_PATH)
     parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT)
     parser.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    parser.add_argument("--expand-with-llm", action="store_true", help="Use Claude Haiku to expand query keywords")
     args = parser.parse_args()
 
     try:
         query = parse_invocation(args.query)
         ensure_database(args.db)
-        results = search_database(args.db, query, args.limit)
+        results = search_database(args.db, query, args.limit, use_llm=args.expand_with_llm)
     except Exception as exc:  # noqa: BLE001
         parser.exit(2, f"{exc}\n")
 

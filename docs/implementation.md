@@ -110,6 +110,58 @@ DuckDB内にchunkとembeddingを保持し、上位chunkを根拠として返す�
 
 今後の改善:
 
-- [ ] DuckDB VSS拡張によるANN検索を追加する。
-- [ ] `sentence-transformers` などの意味embeddingモデルに差し替える。
-- [ ] PDF本文抽出パイプラインを追加し、PDF由来テキストのカバレッジを増やす。
+- [x] DuckDB VSS拡張によるANN検索を追加する。
+- [x] `sentence-transformers` などの意味embeddingモデルに差し替える。
+- [x] PDF本文抽出パイプラインを追加し、PDF由来テキストのカバレッジを増やす。
+
+## Step 8: 意味embedding（sentence-transformers）
+
+外部APIやモデルダウンロードに依存しない `local-hashed-ngram-v1` の代わりに、意味embeddingモデルを使い、「ドローン」→「無人航空機」のような同義語ヒットを可能にする。
+
+- [x] `sentence-transformers` を optional 依存として追加する（`uv add sentence-transformers`）。
+- [x] `rag_embeddings.py` に `SentenceTransformerEmbedder` クラスを追加する。
+- [x] `get_embedder(model_name)` ファクトリ関数を追加し、ngram/ST を切り替えられるようにする。
+- [x] `build_duckdb.py` に `--embedding-model` フラグを追加する（デフォルト: `local-hashed-ngram-v1`）。
+- [x] `--embedding-model multilingual-e5-small` 指定時は `intfloat/multilingual-e5-small`（384次元）を使う。
+- [x] ST使用時は `embedding` カラムを `FLOAT[384]` に変更し、BLOB→FLOAT[] のスキーマ切り替えを実現する。
+- [x] `search_rag.py` でDBスキーマを自動検出し、BLOB（ngram）とFLOAT[]（ST）を両方サポートする。
+- [x] `setup_jaea_search.py` に `--embedding-model` フラグを追加する。
+
+## Step 9: DuckDB VSS拡張（ANN検索）
+
+70k超のchunkを高速に検索するため、DuckDB VSS拡張のHNSWインデックスを活用する。
+
+- [x] `FLOAT[dim]` スキーマ時に `vss` 拡張をインストール・ロードし、HNSWインデックスを作成する。
+- [x] `search_rag.py` の `rank_chunks` でスキーマを検出し、FLOAT[]時は `array_cosine_similarity` をDuckDB側で計算する。
+- [x] VSS不使用（BLOBスキーマ）の場合はPython側cosine similarityにフォールバックする。
+- [x] `ensure_database` でBLOBとFLOAT[]の両スキーマを受け入れる。
+
+## Step 10: 日本語形態素解析
+
+クエリを形態素に分解して基本形・活用形の漏れを減らす。
+
+- [x] `janome` を依存に追加する（`uv add janome`、pure Python、システム依存なし）。
+- [x] `_tokenize_jp(text)` を実装し、名詞・動詞・形容詞の基本形を抽出する。
+- [x] `expand_query` に形態素解析の結果を追加する。
+- [x] `janome` 未インストール時は既存の正規表現分割にフォールバックする。
+
+## Step 11: LLMによるクエリ拡張
+
+ユーザの入力から関連キーワードをLLMに自動生成させ、同義語・関連概念でヒット漏れを防ぐ。
+
+- [x] `anthropic` を依存に追加する（`uv add anthropic`）。
+- [x] `_expand_with_llm(query)` を実装し、claude-haiku で5語以内のキーワードを生成する。
+- [x] `search_rag.py` に `--expand-with-llm` フラグを追加する。
+- [x] `ANTHROPIC_API_KEY` 未設定または API エラー時は黙ってスキップする。
+
+## Step 12: PDF本文抽出パイプライン
+
+現状はタイトル・概要・キーワードのみ。PDF全文をchunkに取り込み検索カバレッジを増やす。
+
+- [x] `pypdf` と `httpx` を依存に追加する（`uv add pypdf httpx`）。
+- [x] `jaea/scripts/fetch_pdf_text.py` を作成する。
+  - `rag_documents.pdf_links` から最初のPDF URLを取得する。
+  - PDF本文を `pypdf` で抽出し `rag_documents.pdf_text` を更新する。
+  - `--limit` で1回の取得上限を指定できる。
+  - `--dry-run` で実際のダウンロードをスキップして確認できる。
+- [x] PDF取得後に対象ドキュメントのchunkを再作成するオプションを提供する（`--rechunk`）。

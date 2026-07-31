@@ -15,7 +15,7 @@ import duckdb
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from jaea.scripts.rag_embeddings import EMBEDDING_DIM, chunk_text, embed_text, pack_embedding  # noqa: E402
+from jaea.scripts.rag_embeddings import EMBEDDING_DIM, SentenceTransformerEmbedder, chunk_text, embed_text, get_embedder  # noqa: E402
 
 OUTPUT_DIR = REPO_ROOT / "jaea" / "output"
 DEFAULT_DB_PATH = REPO_ROOT / "jaea" / "jaea.duckdb"
@@ -240,7 +240,8 @@ def create_rag_documents(conn: duckdb.DuckDBPyConnection, rows: list[dict[str, o
     )
 
 
-def make_document_chunks(row: dict[str, object]) -> list[dict[str, object]]:
+def make_document_chunk_texts(row: dict[str, object]) -> list[tuple[str, str]]:
+    """Return (source, text) pairs for all non-empty sections of a document."""
     sections = [
         ("title", f"タイトル: {row['title']}"),
         (
@@ -255,14 +256,34 @@ def make_document_chunks(row: dict[str, object]) -> list[dict[str, object]]:
         ),
         ("pdf_text", f"PDF本文: {row['pdf_text']}"),
     ]
-    chunks: list[dict[str, object]] = []
-    chunk_index = 0
+    result = []
     for source, text in sections:
         content = make_search_text(str(text))
-        if not content or (source == "pdf_text" and not row["pdf_text"]):
-            continue
+        if content and not (source == "pdf_text" and not row["pdf_text"]):
+            result.append((source, content))
+    return result
+
+
+def make_document_chunks(
+    row: dict[str, object],
+    embedder: SentenceTransformerEmbedder | None = None,
+) -> list[dict[str, object]]:
+    if embedder is not None:
+        dim = embedder.dim
+        model_label = f"{embedder.model_name}:{dim}"
+    else:
+        dim = EMBEDDING_DIM
+        model_label = f"local-hashed-ngram-v1:{dim}"
+
+    chunks: list[dict[str, object]] = []
+    chunk_index = 0
+    for source, content in make_document_chunk_texts(row):
         for chunk in chunk_text(content):
             chunk_index += 1
+            if embedder is not None:
+                vector: list[float] = embedder.embed(chunk)
+            else:
+                vector = embed_text(chunk)
             chunks.append(
                 {
                     "chunk_id": f"{row['doc_type']}:{row['doc_id']}:{chunk_index}",
@@ -273,9 +294,9 @@ def make_document_chunks(row: dict[str, object]) -> list[dict[str, object]]:
                     "chunk_index": chunk_index,
                     "chunk_source": source,
                     "chunk_text": chunk,
-                    "embedding": pack_embedding(embed_text(chunk)),
-                    "embedding_dim": EMBEDDING_DIM,
-                    "embedding_model": f"local-hashed-ngram-v1:{EMBEDDING_DIM}",
+                    "embedding": vector,
+                    "embedding_dim": dim,
+                    "embedding_model": model_label,
                     "detail_url": row["detail_url"],
                     "pdf_links": row["pdf_links"],
                     "source_table": row["source_table"],
@@ -284,10 +305,33 @@ def make_document_chunks(row: dict[str, object]) -> list[dict[str, object]]:
     return chunks
 
 
-def create_rag_chunks(conn: duckdb.DuckDBPyConnection, rows: list[dict[str, object]]) -> None:
+def _try_install_vss(conn: duckdb.DuckDBPyConnection, dim: int) -> bool:
+    try:
+        conn.execute("INSTALL vss")
+        conn.execute("LOAD vss")
+        conn.execute("CREATE INDEX ON rag_chunks USING HNSW (embedding)")
+        return True
+    except Exception as exc:
+        print(f"VSS HNSWインデックス作成スキップ: {exc}")
+        return False
+
+
+def create_rag_chunks(
+    conn: duckdb.DuckDBPyConnection,
+    rows: list[dict[str, object]],
+    embedder: SentenceTransformerEmbedder | None = None,
+) -> None:
+    dim = embedder.dim if embedder is not None else EMBEDDING_DIM
+    use_float_array = embedder is not None
+
     conn.execute("DROP TABLE IF EXISTS rag_chunks")
+    if use_float_array:
+        embedding_col = f"embedding FLOAT[{dim}]"
+    else:
+        embedding_col = "embedding BLOB"
+
     conn.execute(
-        """
+        f"""
         CREATE TABLE rag_chunks (
             chunk_id VARCHAR,
             doc_type VARCHAR,
@@ -297,7 +341,7 @@ def create_rag_chunks(conn: duckdb.DuckDBPyConnection, rows: list[dict[str, obje
             chunk_index INTEGER,
             chunk_source VARCHAR,
             chunk_text VARCHAR,
-            embedding BLOB,
+            {embedding_col},
             embedding_dim INTEGER,
             embedding_model VARCHAR,
             detail_url VARCHAR,
@@ -306,36 +350,68 @@ def create_rag_chunks(conn: duckdb.DuckDBPyConnection, rows: list[dict[str, obje
         )
         """
     )
+
+    # Batch embed with sentence-transformers for efficiency
+    if embedder is not None:
+        all_chunks: list[dict[str, object]] = []
+        for document in rows:
+            all_chunks.extend(make_document_chunks(document, embedder=None))
+        texts = [str(c["chunk_text"]) for c in all_chunks]
+        print(f"  batch embedding {len(texts)} chunks with {embedder.model_name}...")
+        vectors = embedder.embed_batch(texts, show_progress=True)
+        for chunk, vec in zip(all_chunks, vectors):
+            chunk["embedding"] = vec
+            chunk["embedding_dim"] = dim
+            chunk["embedding_model"] = f"{embedder.model_name}:{dim}"
+        batches = all_chunks
+    else:
+        batches = []
+        for document in rows:
+            batches.extend(make_document_chunks(document, embedder=None))
+
     insert_sql = "INSERT INTO rag_chunks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     batch: list[list[object]] = []
-    for document in rows:
-        for row in make_document_chunks(document):
-            batch.append(
-                [
-                    row["chunk_id"],
-                    row["doc_type"],
-                    row["doc_id"],
-                    row["doc_no"],
-                    row["title"],
-                    row["chunk_index"],
-                    row["chunk_source"],
-                    row["chunk_text"],
-                    row["embedding"],
-                    row["embedding_dim"],
-                    row["embedding_model"],
-                    row["detail_url"],
-                    row["pdf_links"],
-                    row["source_table"],
-                ]
-            )
-            if len(batch) >= INSERT_BATCH_SIZE:
-                conn.executemany(insert_sql, batch)
-                batch.clear()
+    for row in batches:
+        embedding_value = row["embedding"]
+        if use_float_array:
+            pass  # list[float] — DuckDB handles FLOAT[] directly
+        else:
+            import struct
+            embedding_value = struct.pack(f"{len(embedding_value)}f", *embedding_value)
+        batch.append(
+            [
+                row["chunk_id"],
+                row["doc_type"],
+                row["doc_id"],
+                row["doc_no"],
+                row["title"],
+                row["chunk_index"],
+                row["chunk_source"],
+                row["chunk_text"],
+                embedding_value,
+                row["embedding_dim"],
+                row["embedding_model"],
+                row["detail_url"],
+                row["pdf_links"],
+                row["source_table"],
+            ]
+        )
+        if len(batch) >= INSERT_BATCH_SIZE:
+            conn.executemany(insert_sql, batch)
+            batch.clear()
     if batch:
         conn.executemany(insert_sql, batch)
 
+    if use_float_array:
+        _try_install_vss(conn, dim)
 
-def build_database(db_path: Path = DEFAULT_DB_PATH, output_dir: Path = OUTPUT_DIR) -> dict[str, int]:
+
+def build_database(
+    db_path: Path = DEFAULT_DB_PATH,
+    output_dir: Path = OUTPUT_DIR,
+    embedding_model: str = "local-hashed-ngram-v1",
+) -> dict[str, int]:
+    embedder = get_embedder(embedding_model)
     source_rows: dict[str, list[dict[str, str]]] = {}
     conn = duckdb.connect(str(db_path))
     try:
@@ -347,7 +423,7 @@ def build_database(db_path: Path = DEFAULT_DB_PATH, output_dir: Path = OUTPUT_DI
 
         rag_rows = build_rag_rows(source_rows)
         create_rag_documents(conn, rag_rows)
-        create_rag_chunks(conn, rag_rows)
+        create_rag_chunks(conn, rag_rows, embedder=embedder)
 
         summary = {
             table: conn.execute(f"SELECT count(*) FROM {quote_identifier(table)}").fetchone()[0]
@@ -363,9 +439,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Build DuckDB database for JAEA RAG search.")
     parser.add_argument("--db", type=Path, default=DEFAULT_DB_PATH)
     parser.add_argument("--output-dir", type=Path, default=OUTPUT_DIR)
+    parser.add_argument(
+        "--embedding-model",
+        default="local-hashed-ngram-v1",
+        help="Embedding model: local-hashed-ngram-v1 (default) or multilingual-e5-small",
+    )
     args = parser.parse_args()
 
-    summary = build_database(args.db, args.output_dir)
+    summary = build_database(args.db, args.output_dir, args.embedding_model)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0
 
