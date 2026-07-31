@@ -223,9 +223,8 @@ uv run pytest
 - chunk類似度、キーワード一致、既存スコアを組み合わせたハイブリッド検索
 - 上位chunkを根拠としてMarkdown/JSONに出力
 - 参照元、該当chunk、詳細URL、PDFリンクの提示
-
-今後の改善:
-
-- DuckDB VSS拡張でANN検索を使う。
-- `sentence-transformers` などの意味embeddingモデルに差し替える。
-- PDF本文抽出パイプラインを追加し、PDF由来テキストのカバレッジを増やす。
+- `sentence-transformers`（`intfloat/multilingual-e5-small` など）による意味embeddingモデルへの差し替え（`--embedding-model` フラグで切り替え）
+- DuckDB VSS拡張 + HNSWインデックスによるANN検索（FLOAT[]スキーマ時に自動有効化）
+- `janome` による日本語形態素解析でクエリを展開（部分文字列の誤マッチを自動フィルタ）
+- `--expand-with-llm` フラグで Claude Haiku による関連キーワード自動生成
+- `jaea/scripts/fetch_pdf_text.py` によるPDF本文抽出パイプライン（`pypdf` + `httpx`、`--rechunk` でchunk再作成）
